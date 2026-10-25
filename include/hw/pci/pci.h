@@ -74,7 +74,7 @@ extern bool pci_available;
 /* Intel (0x8086) */
 #define PCI_DEVICE_ID_INTEL_82551IT      0x1209
 #define PCI_DEVICE_ID_INTEL_82557        0x1229
-#define PCI_DEVICE_ID_INTEL_82801IR      0x2922
+#define PCI_DEVICE_ID_INTEL_82801IR      0x2829  /* VirtualBox ICH8M compat */
 
 /* Red Hat / Qumranet (for QEMU) -- see pci-ids.txt */
 #define PCI_VENDOR_ID_REDHAT_QUMRANET    0x1af4

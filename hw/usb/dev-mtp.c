@@ -15,7 +15,12 @@
 #include <wchar.h>
 #include <dirent.h>
 #include <glib/gstdio.h>
+#ifdef _WIN32
+#include <windows.h>
+#define lstat stat
+#else
 #include <sys/statvfs.h>
+#endif
 
 
 #include "qemu/iov.h"
@@ -608,7 +613,9 @@ static void usb_mtp_object_readdir(MTPState *s, MTPObject *o)
 {
     struct dirent *entry;
     DIR *dir;
+#ifndef _WIN32
     int fd;
+#endif
     Error *err = NULL;
 
     if (o->have_children) {
@@ -616,6 +623,12 @@ static void usb_mtp_object_readdir(MTPState *s, MTPObject *o)
     }
     o->have_children = true;
 
+#ifdef _WIN32
+    dir = opendir(o->path);
+    if (!dir) {
+        return;
+    }
+#else
     fd = open(o->path, O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) {
         return;
@@ -625,6 +638,7 @@ static void usb_mtp_object_readdir(MTPState *s, MTPObject *o)
         close(fd);
         return;
     }
+#endif
 
     if (s->file_monitor) {
         int64_t id = qemu_file_monitor_add_watch(s->file_monitor, o->path, NULL,
@@ -867,8 +881,9 @@ static MTPData *usb_mtp_get_storage_ids(MTPState *s, MTPControl *c)
 static MTPData *usb_mtp_get_storage_info(MTPState *s, MTPControl *c)
 {
     MTPData *d = usb_mtp_data_alloc(c);
-    struct statvfs buf;
+#ifndef _WIN32
     int rc;
+#endif
 
     trace_usb_mtp_op_get_storage_info(s->dev.addr);
 
@@ -882,16 +897,36 @@ static MTPData *usb_mtp_get_storage_info(MTPState *s, MTPControl *c)
         usb_mtp_add_u16(d, 0x0001);
     }
 
-    rc = statvfs(s->root, &buf);
-    if (rc == 0) {
-        usb_mtp_add_u64(d, (uint64_t)buf.f_frsize * buf.f_blocks);
-        usb_mtp_add_u64(d, (uint64_t)buf.f_frsize * buf.f_bavail);
-        usb_mtp_add_u32(d, buf.f_ffree);
-    } else {
-        usb_mtp_add_u64(d, 0xffffffff);
-        usb_mtp_add_u64(d, 0xffffffff);
-        usb_mtp_add_u32(d, 0xffffffff);
+#ifdef _WIN32
+    {
+        ULARGE_INTEGER free_avail, total_bytes, total_free;
+        wchar_t wroot[MAX_PATH];
+        MultiByteToWideChar(CP_UTF8, 0, s->root, -1, wroot, MAX_PATH);
+        if (GetDiskFreeSpaceExW(wroot, &free_avail, &total_bytes, &total_free)) {
+            usb_mtp_add_u64(d, total_bytes.QuadPart);
+            usb_mtp_add_u64(d, free_avail.QuadPart);
+            usb_mtp_add_u32(d, 0xffffffff);
+        } else {
+            usb_mtp_add_u64(d, 0xffffffff);
+            usb_mtp_add_u64(d, 0xffffffff);
+            usb_mtp_add_u32(d, 0xffffffff);
+        }
     }
+#else
+    {
+        struct statvfs buf;
+        rc = statvfs(s->root, &buf);
+        if (rc == 0) {
+            usb_mtp_add_u64(d, (uint64_t)buf.f_frsize * buf.f_blocks);
+            usb_mtp_add_u64(d, (uint64_t)buf.f_frsize * buf.f_bavail);
+            usb_mtp_add_u32(d, buf.f_ffree);
+        } else {
+            usb_mtp_add_u64(d, 0xffffffff);
+            usb_mtp_add_u64(d, 0xffffffff);
+            usb_mtp_add_u32(d, 0xffffffff);
+        }
+    }
+#endif
 
     usb_mtp_add_str(d, s->desc);
     usb_mtp_add_wstr(d, L"123456789abcdef");
@@ -972,7 +1007,7 @@ static MTPData *usb_mtp_get_object(MTPState *s, MTPControl *c,
 
     trace_usb_mtp_op_get_object(s->dev.addr, o->handle, o->path);
 
-    d->fd = open(o->path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    d->fd = open(o->path, O_RDONLY);
     if (d->fd == -1) {
         usb_mtp_data_free(d);
         return NULL;
@@ -996,7 +1031,7 @@ static MTPData *usb_mtp_get_partial_object(MTPState *s, MTPControl *c,
                                         c->argv[1], c->argv[2]);
 
     d = usb_mtp_data_alloc(c);
-    d->fd = open(o->path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    d->fd = open(o->path, O_RDONLY);
     if (d->fd == -1) {
         usb_mtp_data_free(d);
         return NULL;
@@ -1630,8 +1665,8 @@ static void usb_mtp_write_data(MTPState *s, uint32_t handle)
                 goto done;
             }
 
-            d->fd = open(path, O_CREAT | O_WRONLY |
-                         O_CLOEXEC | O_NOFOLLOW, mask & 0666);
+            d->fd = open(path, O_CREAT | O_WRONLY,
+                         mask & 0666);
             if (d->fd == -1) {
                 ret = 1;
                 goto done;

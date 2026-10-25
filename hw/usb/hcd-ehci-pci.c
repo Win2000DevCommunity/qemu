@@ -21,6 +21,9 @@
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "qemu/range.h"
+#include "chardev/char-fe.h"
+#include "hw/core/qdev-properties-system.h"
+#include "ehci-dbgp.h"
 
 typedef struct EHCIPCIInfo {
     const char *name;
@@ -65,10 +68,35 @@ static void usb_ehci_pci_realize(PCIDevice *dev, Error **errp)
     pci_conf[0x6e] = 0x00;
     pci_conf[0x6f] = 0xc0;  /* USBLEFCTLSTS */
 
+    /* EHCI Debug Port Capability (PCI_CAP_ID_DBG = 0x0A) */
+    {
+        int cap_off = pci_add_capability(dev, PCI_CAP_ID_DBG,
+                                         EHCI_DBGP_CAP_OFFSET,
+                                         EHCI_DBGP_CAP_SIZE, NULL);
+        if (cap_off >= 0) {
+            /*
+             * Debug Port Register DW:
+             *   [31:29] = BAR number (0)
+             *   [28:16] = Offset in BAR of debug registers (0x80)
+             *   [15: 8] = Next cap pointer (filled by pci_add_capability)
+             *   [ 7: 0] = Cap ID (filled by pci_add_capability)
+             */
+            uint32_t dbgp_dw = (0 << 29) | (EHCI_DBGP_OFFSET << 16);
+            pci_set_word(&pci_conf[cap_off + 2], (uint16_t)(dbgp_dw >> 16));
+        }
+    }
+
     s->irq = pci_allocate_irq(dev);
     s->as = pci_get_address_space(dev);
 
     usb_ehci_realize(s, DEVICE(dev), NULL);
+    /* Set debug port number = 1 in HCSPARAMS bits [23:20] */
+    s->caps[0x06] = (EHCI_DBGP_PORT_NUM << 4);
+    s->caps[0x09] = 0x68;
+    /* Initialize and register the debug port subregion */
+    ehci_dbgp_init(&s->dbgp, OBJECT(dev));
+    memory_region_add_subregion(&s->mem, EHCI_DBGP_OFFSET, &s->dbgp.mem);
+
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->mem);
 }
 
@@ -77,8 +105,6 @@ static void usb_ehci_pci_init(Object *obj)
     DeviceClass *dc = DEVICE_GET_CLASS(obj);
     EHCIPCIState *i = PCI_EHCI(obj);
     EHCIState *s = &i->ehci;
-
-    s->caps[0x09] = 0x68;        /* EECP */
 
     s->capsbase = 0x00;
     s->opregbase = 0x20;
@@ -90,6 +116,10 @@ static void usb_ehci_pci_init(Object *obj)
     }
 
     usb_ehci_init(s, DEVICE(obj));
+
+    s->caps[0x09] = 0x68;        /* EECP */
+    /* Set debug port number = 1 in HCSPARAMS bits [23:20] */
+    s->caps[0x06] = (EHCI_DBGP_PORT_NUM << 4);
 }
 
 static void usb_ehci_pci_finalize(Object *obj)
@@ -136,6 +166,7 @@ static void usb_ehci_pci_write_config(PCIDevice *dev, uint32_t addr,
 }
 
 static const Property ehci_pci_properties[] = {
+    DEFINE_PROP_CHR("chardev", EHCIPCIState, ehci.dbgp.chr),
     DEFINE_EHCI_COMMON_PROPERTIES(EHCIPCIState),
 };
 

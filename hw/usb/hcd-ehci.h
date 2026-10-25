@@ -23,6 +23,7 @@
 #include "system/dma.h"
 #include "hw/pci/pci_device.h"
 #include "hw/core/sysbus.h"
+#include "ehci-dbgp.h"
 
 #define MMIO_SIZE        0x1000
 #define CAPA_SIZE        0x10
@@ -326,6 +327,10 @@ struct EHCIState {
     uint32_t async_stepdown;
     uint32_t periodic_sched_active;
     bool int_req_by_async;
+    /* EHCI Debug Port state */
+    EHCIDbgpState dbgp;
+    MemoryRegion mem_dbgp;
+
     VMChangeStateEntry *vmstate;
 };
 

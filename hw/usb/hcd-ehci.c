@@ -976,7 +976,11 @@ static uint64_t ehci_port_read(void *ptr, hwaddr addr,
     EHCIState *s = ptr;
     uint32_t val;
 
-    val = s->portsc[addr >> 2];
+    int port = addr >> 2;
+    val = s->portsc[port];
+    if (port == (EHCI_DBGP_PORT_NUM - 1) && s->dbgp.enabled) {
+        val |= PORTSC_CONNECT;
+    }
     trace_usb_ehci_portsc_read(addr + s->portscbase, addr >> 2, val);
     return val;
 }
@@ -1032,6 +1036,10 @@ static void ehci_port_write(void *ptr, hwaddr addr,
 
     if ((val & PORTSC_PRESET) && !(*portsc & PORTSC_PRESET)) {
         trace_usb_ehci_port_reset(port, 1);
+        if (port == (EHCI_DBGP_PORT_NUM - 1) && s->dbgp.enabled) {
+            val &= ~PORTSC_PRESET;
+            val |= PORTSC_PED | PORTSC_CONNECT;
+        }
     }
 
     if (!(val & PORTSC_PRESET) && (*portsc & PORTSC_PRESET)) {
@@ -1058,6 +1066,9 @@ static void ehci_port_write(void *ptr, hwaddr addr,
         val &= ~PORTSC_SUSPEND;
     }
 
+    if (port == (EHCI_DBGP_PORT_NUM - 1) && s->dbgp.enabled) {
+        val |= PORTSC_CONNECT;
+    }
     *portsc &= ~PORTSC_RO_MASK;
     *portsc |= val;
     trace_usb_ehci_portsc_change(addr + s->portscbase, addr >> 2, *portsc, old);
@@ -2685,7 +2696,7 @@ void usb_ehci_init(EHCIState *s, DeviceState *dev)
     s->caps[0x03] = 0x01;        /* HC version */
     s->caps[0x04] = s->portnr;   /* Number of downstream ports */
     s->caps[0x05] = 0x00;        /* No companion ports at present */
-    s->caps[0x06] = 0x00;
+    s->caps[0x06] = 0x10;        /* Port 1 is Debug Port */
     s->caps[0x07] = 0x00;
     s->caps[0x08] = 0x80;        /* We can cache whole frame */
     s->caps[0x0a] = 0x00;

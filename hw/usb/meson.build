@@ -17,7 +17,7 @@ system_ss.add(when: 'CONFIG_USB_UHCI', if_true: files('hcd-uhci.c'))
 system_ss.add(when: 'CONFIG_USB_OHCI', if_true: files('hcd-ohci.c'))
 system_ss.add(when: 'CONFIG_USB_OHCI_PCI', if_true: files('hcd-ohci-pci.c'))
 system_ss.add(when: 'CONFIG_USB_OHCI_SYSBUS', if_true: files('hcd-ohci-sysbus.c'))
-system_ss.add(when: 'CONFIG_USB_EHCI', if_true: files('hcd-ehci.c'))
+system_ss.add(when: 'CONFIG_USB_EHCI', if_true: files('hcd-ehci.c', 'ehci-dbgp.c'))
 system_ss.add(when: 'CONFIG_USB_EHCI_PCI', if_true: files('hcd-ehci-pci.c'))
 system_ss.add(when: 'CONFIG_USB_EHCI_SYSBUS', if_true: files('hcd-ehci-sysbus.c'))
 system_ss.add(when: 'CONFIG_USB_XHCI', if_true: files('hcd-xhci.c'))
@@ -46,9 +46,8 @@ system_ss.add(when: 'CONFIG_USB_AUDIO', if_true: files('dev-audio.c'))
 system_ss.add(when: 'CONFIG_USB_SERIAL', if_true: files('dev-serial.c'))
 system_ss.add(when: 'CONFIG_USB_NETWORK', if_true: files('dev-network.c'))
 system_ss.add(when: 'CONFIG_PC87560', if_true: files('pc87560-ohci.c'))
-if host_os != 'windows'
-  system_ss.add(when: 'CONFIG_USB_STORAGE_MTP', if_true: files('dev-mtp.c'))
-endif
+# Windows guard removed - patched dev-mtp.c for Windows compatibility
+system_ss.add(when: 'CONFIG_USB_STORAGE_MTP', if_true: files('dev-mtp.c'))
 
 # smartcard
 system_ss.add(when: 'CONFIG_USB_SMARTCARD', if_true: files('dev-smartcard-reader.c'))
